@@ -115,6 +115,6 @@ This project is open source and available under the [MIT License](LICENSE).
 - Expo team for the amazing development platform
 - Supabase for the backend infrastructure
 - React Navigation for seamless navigation
-- All the open-source contributors whose libraries made this possible 
+- All the open-source contributors whose libraries made this possible
 
 <!-- Trigger redeploy --> 
