@@ -125,4 +125,4 @@ This project is open source and available under the [MIT License](LICENSE).
 - React Navigation for seamless navigation
 - All the open-source contributors whose libraries made this possible
 
-<!-- Trigger redeploy after permissions update --> 
+# Trigger redeploy 
