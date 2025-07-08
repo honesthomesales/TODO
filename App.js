@@ -110,6 +110,11 @@ const todoToSupabaseFormat = (todo) => {
   };
 };
 
+// Utility function to check for valid Date
+function isValidDate(d) {
+  return d instanceof Date && !isNaN(d.getTime());
+}
+
 // Calendar Screen
 function CalendarScreen({ todos, teamMembers }) {
   const [mode, setMode] = useState('week');
@@ -622,15 +627,21 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
               </View>
             </View>
             {showDatePicker && (
-              <DateTimePicker
-                value={dueDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, date) => {
-                  setShowDatePicker(false);
-                  if (date) setDueDate(date);
-                }}
-              />
+              (() => {
+                const pickerDate = isValidDate(dueDate) ? dueDate : new Date();
+                console.log('DateTimePicker value:', pickerDate, 'Original dueDate:', dueDate);
+                return (
+                  <DateTimePicker
+                    value={pickerDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(_, date) => {
+                      setShowDatePicker(false);
+                      if (date) setDueDate(date);
+                    }}
+                  />
+                );
+              })()
             )}
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
@@ -713,15 +724,21 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
               </View>
             </View>
             {showDatePicker && (
-              <DateTimePicker
-                value={dueDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, date) => {
-                  setShowDatePicker(false);
-                  if (date) setDueDate(date);
-                }}
-              />
+              (() => {
+                const pickerDate = isValidDate(dueDate) ? dueDate : new Date();
+                console.log('DateTimePicker value:', pickerDate, 'Original dueDate:', dueDate);
+                return (
+                  <DateTimePicker
+                    value={pickerDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(_, date) => {
+                      setShowDatePicker(false);
+                      if (date) setDueDate(date);
+                    }}
+                  />
+                );
+              })()
             )}
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
@@ -1094,15 +1111,21 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
               </View>
             </View>
             {showDatePicker && (
-              <DateTimePicker
-                value={dueDate}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={(_, date) => {
-                  setShowDatePicker(false);
-                  if (date) setDueDate(date);
-                }}
-              />
+              (() => {
+                const pickerDate = isValidDate(dueDate) ? dueDate : new Date();
+                console.log('DateTimePicker value:', pickerDate, 'Original dueDate:', dueDate);
+                return (
+                  <DateTimePicker
+                    value={pickerDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(_, date) => {
+                      setShowDatePicker(false);
+                      if (date) setDueDate(date);
+                    }}
+                  />
+                );
+              })()
             )}
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
