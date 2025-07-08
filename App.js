@@ -741,36 +741,7 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
               />
             )}
             {/* Comments Section */}
-            <View style={{ marginTop: 20 }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>Comments</Text>
-              <FlatList
-                data={comments}
-                keyExtractor={item => item.id}
-                renderItem={({ item }) => (
-                  <View style={{ marginBottom: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
-                    <Text style={{ fontWeight: 'bold' }}>{item.user_name || 'User'} <Text style={{ color: '#888', fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</Text></Text>
-                    <Text>{item.text}</Text>
-                  </View>
-                )}
-                ListEmptyComponent={<Text style={{ color: '#888' }}>No comments yet.</Text>}
-                style={{ maxHeight: 120 }}
-              />
-              <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                <TextInput
-                  style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 8, marginRight: 8 }}
-                  placeholder="Add a comment..."
-                  value={newComment}
-                  onChangeText={setNewComment}
-                />
-                <TouchableOpacity
-                  style={{ backgroundColor: '#007bff', borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12 }}
-                  onPress={handleAddComment}
-                  disabled={!newComment.trim()}
-                >
-                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Post</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <TaskComments taskId={editingTodo?.key} currentUser={currentUser} />
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
                 <Text style={styles.addButtonText}>Cancel</Text>
@@ -1219,38 +1190,7 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
               />
             )}
             {/* Comments Section */}
-            {typeof comments !== 'undefined' && (
-              <View style={{ marginTop: 20 }}>
-                <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>Comments</Text>
-                <FlatList
-                  data={comments}
-                  keyExtractor={item => item.id}
-                  renderItem={({ item }) => (
-                    <View style={{ marginBottom: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
-                      <Text style={{ fontWeight: 'bold' }}>{item.user_name || 'User'} <Text style={{ color: '#888', fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</Text></Text>
-                      <Text>{item.text}</Text>
-                    </View>
-                  )}
-                  ListEmptyComponent={<Text style={{ color: '#888' }}>No comments yet.</Text>}
-                  style={{ maxHeight: 120 }}
-                />
-                <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                  <TextInput
-                    style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 8, marginRight: 8 }}
-                    placeholder="Add a comment..."
-                    value={newComment}
-                    onChangeText={setNewComment}
-                  />
-                  <TouchableOpacity
-                    style={{ backgroundColor: '#007bff', borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12 }}
-                    onPress={handleAddComment}
-                    disabled={!newComment.trim()}
-                  >
-                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>Post</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            <TaskComments taskId={editingTodo?.key} currentUser={currentUser} />
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
                 <Text style={styles.addButtonText}>Cancel</Text>
@@ -2413,3 +2353,114 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}><Text style={{ color: 'red', fontSize: 18, fontWeight: 'bold' }}>Something went wrong: {this.state.error?.toString()}</Text></View>;
+    }
+    return this.props.children;
+  }
+}
+
+function TaskComments({ taskId, currentUser }) {
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  useEffect(() => {
+    if (taskId) {
+      (async () => {
+        const { data, error } = await supabase
+          .from('comments')
+          .select('*, user:team_members(name)')
+          .eq('task_id', taskId)
+          .order('created_at', { ascending: true });
+        if (!error) {
+          setComments(Array.isArray(data) ? data.map(c => ({
+            ...c,
+            user_name: c.user?.name || 'User',
+          })) : []);
+        } else {
+          setComments([]);
+        }
+      })();
+    } else {
+      setComments([]);
+    }
+  }, [taskId]);
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !taskId || !currentUser) return;
+    const { error } = await supabase
+      .from('comments')
+      .insert([{
+        task_id: taskId,
+        user_id: currentUser.id,
+        text: newComment.trim(),
+      }]);
+    if (!error) {
+      setNewComment('');
+      // Log to activity_log
+      await supabase.from('activity_log').insert([{
+        type: 'commented',
+        task_id: taskId,
+        user_id: currentUser.id,
+        details: { text: newComment.trim() },
+      }]);
+      // Refetch comments
+      const { data: newComments } = await supabase
+        .from('comments')
+        .select('*, user:team_members(name)')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: true });
+      setComments(Array.isArray(newComments) ? newComments.map(c => ({
+        ...c,
+        user_name: c.user?.name || 'User',
+      })) : []);
+    }
+  };
+  // Defensive fallback
+  const safeComments = Array.isArray(comments) ? comments : [];
+  console.log('TaskComments rendered for taskId:', taskId, 'comments:', safeComments);
+  return (
+    <View style={{ marginTop: 20 }}>
+      <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>Comments</Text>
+      <FlatList
+        data={safeComments}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <View style={{ marginBottom: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
+            <Text style={{ fontWeight: 'bold' }}>{item.user_name || 'User'} <Text style={{ color: '#888', fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</Text></Text>
+            <Text>{item.text}</Text>
+          </View>
+        )}
+        ListEmptyComponent={<Text style={{ color: '#888' }}>No comments yet.</Text>}
+        style={{ maxHeight: 120 }}
+      />
+      <View style={{ flexDirection: 'row', marginTop: 8 }}>
+        <TextInput
+          style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 8, marginRight: 8 }}
+          placeholder="Add a comment..."
+          value={newComment}
+          onChangeText={setNewComment}
+        />
+        <TouchableOpacity
+          style={{ backgroundColor: '#007bff', borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12 }}
+          onPress={handleAddComment}
+          disabled={!newComment.trim()}
+        >
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Post</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
