@@ -121,9 +121,10 @@ function isValidDate(d) {
 
 // Calendar Screen
 function CalendarScreen({ todos, teamMembers }) {
-  const [mode, setMode] = useState('week');
-  const [currentDate, setCurrentDate] = useState(new Date());
-  
+  const [mode, setMode] = useState('day'); // Default to day view
+  const [currentDate, setCurrentDate] = useState(new Date()); // Default to today
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
   const staticEvents = [
     {
       title: 'Team sync',
@@ -131,14 +132,13 @@ function CalendarScreen({ todos, teamMembers }) {
       end: new Date(2024, 1, 17, 11, 0),
     },
   ];
-  
+
   const todoEvents = todos.map(todo => {
     const date = new Date(todo.dueDate);
     const assignee = todo.assignee ? teamMembers.find(m => m.id === todo.assignee) : null;
     const assigneeIndex = assignee ? teamMembers.findIndex(m => m.id === todo.assignee) : -1;
     const eventColor = assigneeIndex >= 0 ? TEAM_COLORS[assigneeIndex % TEAM_COLORS.length] : '#ccc';
     const assigneeInitials = assignee ? assignee.name.split(' ').map(n => n[0]).join('').toUpperCase() : '';
-    
     return {
       title: `${todo.text} ${todo.priority.flag}${assigneeInitials ? ` 👤${assigneeInitials}` : ''}`,
       start: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0),
@@ -146,7 +146,7 @@ function CalendarScreen({ todos, teamMembers }) {
       color: eventColor,
     };
   });
-  
+
   const events = [...staticEvents, ...todoEvents];
   const now = new Date();
   const scrollOffsetMinutes = now.getHours() * 60 + now.getMinutes();
@@ -155,10 +155,40 @@ function CalendarScreen({ todos, teamMembers }) {
       nowIndicator: '#007bff',
     },
   };
-  
+
+  // Navigation handlers
+  const goToPrev = () => {
+    if (mode === 'day') {
+      const prev = new Date(currentDate);
+      prev.setDate(prev.getDate() - 1);
+      setCurrentDate(prev);
+    } else if (mode === 'week') {
+      const prev = new Date(currentDate);
+      prev.setDate(prev.getDate() - 7);
+      setCurrentDate(prev);
+    }
+  };
+  const goToNext = () => {
+    if (mode === 'day') {
+      const next = new Date(currentDate);
+      next.setDate(next.getDate() + 1);
+      setCurrentDate(next);
+    } else if (mode === 'week') {
+      const next = new Date(currentDate);
+      next.setDate(next.getDate() + 7);
+      setCurrentDate(next);
+    }
+  };
+  const goToToday = () => setCurrentDate(new Date());
+
+  // Date display
+  const formatDate = (date) => {
+    return date.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Weekly Calendar</Text>
+      <Text style={styles.title}>Calendar</Text>
       <View style={styles.calendarModeRow}>
         {CALENDAR_MODES.map(opt => (
           <TouchableOpacity
@@ -170,6 +200,40 @@ function CalendarScreen({ todos, teamMembers }) {
           </TouchableOpacity>
         ))}
       </View>
+      {/* Navigation Controls */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+        <TouchableOpacity onPress={goToPrev} style={{ padding: 8 }}>
+          <Text style={{ fontSize: 22 }}>◀️</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowDatePicker(true)} style={{ padding: 8 }}>
+          <Text style={{ fontSize: 16, fontWeight: 'bold' }}>{formatDate(currentDate)}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={goToNext} style={{ padding: 8 }}>
+          <Text style={{ fontSize: 22 }}>▶️</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={goToToday} style={{ padding: 8, marginLeft: 8, backgroundColor: '#007bff', borderRadius: 6 }}>
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Today</Text>
+        </TouchableOpacity>
+      </View>
+      {/* Date Picker Modal */}
+      {showDatePicker && (
+        <Modal
+          visible={showDatePicker}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowDatePicker(false)}
+        >
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.2)' }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 8, padding: 16 }}>
+              <CrossPlatformDatePicker
+                value={currentDate}
+                onChange={date => { setCurrentDate(date); setShowDatePicker(false); }}
+                onClose={() => setShowDatePicker(false)}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
       <Calendar
         events={events}
         height={600}
