@@ -284,7 +284,7 @@ function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembe
 }
 
 // Todo List Screen
-function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComplete, onMoveTodo, onUpdateTodo, teamMembers }) {
+function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComplete, onMoveTodo, onUpdateTodo, teamMembers, currentUser }) {
   const [input, setInput] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [priority, setPriority] = useState(PRIORITY_OPTIONS[0]);
@@ -926,7 +926,7 @@ function TeamMembersScreen({ teamMembers, onAddTeamMember, onRemoveTeamMember })
 }
 
 // Prioritized Screen
-function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, onUpdateTodo, teamMembers }) {
+function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, onUpdateTodo, teamMembers, currentUser }) {
   const [editingTodo, setEditingTodo] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [input, setInput] = useState('');
@@ -1534,25 +1534,7 @@ export default function App() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1, paddingTop: 20 }}>
-      {/* User indicator */}
-      <View style={styles.userIndicator}>
-        <View style={[styles.currentUserAvatar, { 
-          backgroundColor: TEAM_COLORS[teamMembers.findIndex(m => m.id === currentUser.id) % TEAM_COLORS.length] 
-        }]}>
-          <Text style={styles.currentUserInitials}>
-            {currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase()}
-          </Text>
-        </View>
-        <Text style={styles.currentUserName}>{currentUser.name}</Text>
-        <TouchableOpacity 
-          style={styles.switchUserButton}
-          onPress={() => setCurrentUser(null)}
-        >
-          <Text style={styles.switchUserButtonText}>Switch</Text>
-        </TouchableOpacity>
-      </View>
-      
+    <ErrorBoundary>
       <NavigationContainer>
         <Tab.Navigator
           screenOptions={{
@@ -1599,6 +1581,7 @@ export default function App() {
                   console.log('Move todo:', item.text, direction);
                 }}
                 teamMembers={teamMembers}
+                currentUser={currentUser}
               />
             )}
           </Tab.Screen>
@@ -1635,7 +1618,7 @@ export default function App() {
           </Tab.Screen>
         </Tab.Navigator>
       </NavigationContainer>
-    </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
 
