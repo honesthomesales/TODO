@@ -184,7 +184,7 @@ function CalendarScreen({ todos, teamMembers }) {
 }
 
 // Draggable Todo Item Component
-function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembers, onStatusChange }) {
+function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembers, onStatusChange, onClaim, currentUser }) {
   const translateY = new Animated.Value(0);
   const scale = new Animated.Value(1);
 
@@ -269,6 +269,15 @@ function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembe
             <Text style={styles.removeButton}>🗑️</Text>
           </TouchableOpacity>
         </View>
+        {/* Claim Button for unassigned tasks */}
+        {(!item.assignee && currentUser) && (
+          <TouchableOpacity
+            style={{ backgroundColor: '#28a745', borderRadius: 6, paddingVertical: 6, paddingHorizontal: 12, marginLeft: 8 }}
+            onPress={() => onClaim(item)}
+          >
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>Claim</Text>
+          </TouchableOpacity>
+        )}
       </Animated.View>
     </PanGestureHandler>
   );
@@ -542,6 +551,17 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
     await onUpdateTodo(todo.key, { status: newStatus });
   };
 
+  const handleClaim = async (todo) => {
+    if (!currentUser) return;
+    await onUpdateTodo(todo.key, { assignee: currentUser.id });
+    await supabase.from('activity_log').insert([{
+      type: 'assigned',
+      task_id: todo.key,
+      user_id: currentUser.id,
+      details: { claimed: true },
+    }]);
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.inputContainer}>
@@ -720,6 +740,37 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
                 onClose={() => setShowDatePicker(false)}
               />
             )}
+            {/* Comments Section */}
+            <View style={{ marginTop: 20 }}>
+              <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>Comments</Text>
+              <FlatList
+                data={comments}
+                keyExtractor={item => item.id}
+                renderItem={({ item }) => (
+                  <View style={{ marginBottom: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
+                    <Text style={{ fontWeight: 'bold' }}>{item.user_name || 'User'} <Text style={{ color: '#888', fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</Text></Text>
+                    <Text>{item.text}</Text>
+                  </View>
+                )}
+                ListEmptyComponent={<Text style={{ color: '#888' }}>No comments yet.</Text>}
+                style={{ maxHeight: 120 }}
+              />
+              <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                <TextInput
+                  style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 8, marginRight: 8 }}
+                  placeholder="Add a comment..."
+                  value={newComment}
+                  onChangeText={setNewComment}
+                />
+                <TouchableOpacity
+                  style={{ backgroundColor: '#007bff', borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12 }}
+                  onPress={handleAddComment}
+                  disabled={!newComment.trim()}
+                >
+                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Post</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
                 <Text style={styles.addButtonText}>Cancel</Text>
@@ -797,6 +848,8 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
               onEdit={handleEditTodo}
               teamMembers={teamMembers}
               onStatusChange={handleStatusChange}
+              onClaim={handleClaim}
+              currentUser={currentUser}
             />
           );
         }}
@@ -910,6 +963,63 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
   const [dueDate, setDueDate] = useState(new Date());
   const [assignee, setAssignee] = useState(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+
+  // Fetch comments when editingTodo changes
+  useEffect(() => {
+    if (editingTodo) {
+      (async () => {
+        const { data, error } = await supabase
+          .from('comments')
+          .select('*, user:team_members(name)')
+          .eq('task_id', editingTodo.key)
+          .order('created_at', { ascending: true });
+        if (!error) {
+          setComments(data.map(c => ({
+            ...c,
+            user_name: c.user?.name || 'User',
+          })));
+        } else {
+          setComments([]);
+        }
+      })();
+    } else {
+      setComments([]);
+    }
+  }, [editingTodo]);
+
+  // Add comment handler
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !editingTodo || !currentUser) return;
+    const { data, error } = await supabase
+      .from('comments')
+      .insert([{
+        task_id: editingTodo.key,
+        user_id: currentUser.id,
+        text: newComment.trim(),
+      }]);
+    if (!error) {
+      setNewComment('');
+      // Log to activity_log
+      await supabase.from('activity_log').insert([{
+        type: 'commented',
+        task_id: editingTodo.key,
+        user_id: currentUser.id,
+        details: { text: newComment.trim() },
+      }]);
+      // Refetch comments
+      const { data: newComments } = await supabase
+        .from('comments')
+        .select('*, user:team_members(name)')
+        .eq('task_id', editingTodo.key)
+        .order('created_at', { ascending: true });
+      setComments(newComments.map(c => ({
+        ...c,
+        user_name: c.user?.name || 'User',
+      })));
+    }
+  };
 
   const handleEditTodo = (todo) => {
     setEditingTodo(todo);
@@ -1018,6 +1128,17 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
     await onUpdateTodo(todo.key, { status: newStatus });
   };
 
+  const handleClaim = async (todo) => {
+    if (!currentUser) return;
+    await onUpdateTodo(todo.key, { assignee: currentUser.id });
+    await supabase.from('activity_log').insert([{
+      type: 'assigned',
+      task_id: todo.key,
+      user_id: currentUser.id,
+      details: { claimed: true },
+    }]);
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Performance Tracking</Text>
@@ -1097,6 +1218,37 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
                 onClose={() => setShowDatePicker(false)}
               />
             )}
+            {/* Comments Section */}
+            <View style={{ marginTop: 20 }}>
+              <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>Comments</Text>
+              <FlatList
+                data={comments}
+                keyExtractor={item => item.id}
+                renderItem={({ item }) => (
+                  <View style={{ marginBottom: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
+                    <Text style={{ fontWeight: 'bold' }}>{item.user_name || 'User'} <Text style={{ color: '#888', fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</Text></Text>
+                    <Text>{item.text}</Text>
+                  </View>
+                )}
+                ListEmptyComponent={<Text style={{ color: '#888' }}>No comments yet.</Text>}
+                style={{ maxHeight: 120 }}
+              />
+              <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                <TextInput
+                  style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 8, marginRight: 8 }}
+                  placeholder="Add a comment..."
+                  value={newComment}
+                  onChangeText={setNewComment}
+                />
+                <TouchableOpacity
+                  style={{ backgroundColor: '#007bff', borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12 }}
+                  onPress={handleAddComment}
+                  disabled={!newComment.trim()}
+                >
+                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Post</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
                 <Text style={styles.addButtonText}>Cancel</Text>
@@ -1137,6 +1289,8 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
               onEdit={handleEditTodo}
               teamMembers={teamMembers}
               onStatusChange={handleStatusChange}
+              onClaim={handleClaim}
+              currentUser={currentUser}
             />
           );
         }}
@@ -1174,6 +1328,46 @@ function CrossPlatformDatePicker({ value, onChange, onClose }) {
       />
     );
   }
+}
+
+// Activity Log Screen
+function ActivityLogScreen({ teamMembers, todos }) {
+  const [logs, setLogs] = useState([]);
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from('activity_log')
+        .select('*, user:team_members(name), task:todos(text)')
+        .order('created_at', { ascending: false });
+      if (!error) {
+        setLogs(data.map(log => ({
+          ...log,
+          user_name: log.user?.name || 'User',
+          task_text: log.task?.text || 'Task',
+        })));
+      } else {
+        setLogs([]);
+      }
+    })();
+  }, []);
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Activity Log</Text>
+      <FlatList
+        data={logs}
+        keyExtractor={item => item.id}
+        renderItem={({ item }) => (
+          <View style={{ marginBottom: 10, padding: 10, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
+            <Text style={{ fontWeight: 'bold' }}>{item.user_name} <Text style={{ color: '#888', fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</Text></Text>
+            <Text style={{ color: '#007bff', fontWeight: 'bold' }}>{item.type.replace('_', ' ').toUpperCase()}</Text>
+            <Text>Task: {item.task_text}</Text>
+            {item.details && <Text style={{ color: '#555' }}>{JSON.stringify(item.details)}</Text>}
+          </View>
+        )}
+        ListEmptyComponent={<Text style={{ color: '#888' }}>No activity yet.</Text>}
+      />
+    </View>
+  );
 }
 
 // Main App Component
@@ -1493,6 +1687,9 @@ export default function App() {
                 onRemoveTeamMember={removeTeamMember}
               />
             )}
+          </Tab.Screen>
+          <Tab.Screen name="Activity Log">
+            {() => <ActivityLogScreen teamMembers={teamMembers} todos={todos} />}
           </Tab.Screen>
         </Tab.Navigator>
       </NavigationContainer>
