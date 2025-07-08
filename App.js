@@ -245,7 +245,7 @@ function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembe
             <Text style={[styles.todoText, item.completed && styles.todoTextCompleted]}>{item.text}</Text>
           </View>
 
-          <Text style={styles.todoDate}>{formatShortDate(item.dueDate)}</Text>
+          <Text style={[styles.todoDate, { fontSize: 18, marginLeft: -32 }]}>{formatShortDate(item.dueDate)}</Text>
         </View>
         
         {/* Status Dropdown/Buttons */}
@@ -1219,36 +1219,38 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
               />
             )}
             {/* Comments Section */}
-            <View style={{ marginTop: 20 }}>
-              <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>Comments</Text>
-              <FlatList
-                data={comments}
-                keyExtractor={item => item.id}
-                renderItem={({ item }) => (
-                  <View style={{ marginBottom: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
-                    <Text style={{ fontWeight: 'bold' }}>{item.user_name || 'User'} <Text style={{ color: '#888', fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</Text></Text>
-                    <Text>{item.text}</Text>
-                  </View>
-                )}
-                ListEmptyComponent={<Text style={{ color: '#888' }}>No comments yet.</Text>}
-                style={{ maxHeight: 120 }}
-              />
-              <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                <TextInput
-                  style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 8, marginRight: 8 }}
-                  placeholder="Add a comment..."
-                  value={newComment}
-                  onChangeText={setNewComment}
+            {typeof comments !== 'undefined' && (
+              <View style={{ marginTop: 20 }}>
+                <Text style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8 }}>Comments</Text>
+                <FlatList
+                  data={comments}
+                  keyExtractor={item => item.id}
+                  renderItem={({ item }) => (
+                    <View style={{ marginBottom: 8, padding: 8, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
+                      <Text style={{ fontWeight: 'bold' }}>{item.user_name || 'User'} <Text style={{ color: '#888', fontSize: 12 }}>{new Date(item.created_at).toLocaleString()}</Text></Text>
+                      <Text>{item.text}</Text>
+                    </View>
+                  )}
+                  ListEmptyComponent={<Text style={{ color: '#888' }}>No comments yet.</Text>}
+                  style={{ maxHeight: 120 }}
                 />
-                <TouchableOpacity
-                  style={{ backgroundColor: '#007bff', borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12 }}
-                  onPress={handleAddComment}
-                  disabled={!newComment.trim()}
-                >
-                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Post</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                  <TextInput
+                    style={{ flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 8, marginRight: 8 }}
+                    placeholder="Add a comment..."
+                    value={newComment}
+                    onChangeText={setNewComment}
+                  />
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#007bff', borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12 }}
+                    onPress={handleAddComment}
+                    disabled={!newComment.trim()}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>Post</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            )}
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
                 <Text style={styles.addButtonText}>Cancel</Text>
