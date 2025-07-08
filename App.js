@@ -10,6 +10,10 @@ import { supabase } from './supabaseClient';
 import * as Speech from 'expo-speech';
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import * as Notifications from 'expo-notifications';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const Tab = createMaterialTopTabNavigator();
 
@@ -186,10 +190,17 @@ function CalendarScreen({ todos, teamMembers }) {
 // Draggable Todo Item Component
 function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembers, onStatusChange, onClaim, currentUser }) {
   const translateY = new Animated.Value(0);
+  const translateX = new Animated.Value(0);
   const scale = new Animated.Value(1);
+  const [showSwipeActions, setShowSwipeActions] = useState(false);
 
   const onGestureEvent = Animated.event(
-    [{ nativeEvent: { translationY: translateY } }],
+    [{ 
+      nativeEvent: { 
+        translationY: translateY,
+        translationX: translateX 
+      } 
+    }],
     { useNativeDriver: true }
   );
 
@@ -200,16 +211,33 @@ function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembe
         useNativeDriver: true,
       }).start();
     } else if (event.nativeEvent.oldState === State.ACTIVE) {
-      let { translationY } = event.nativeEvent;
+      let { translationY, translationX } = event.nativeEvent;
       
-      if (translationY < -20) {
-        onMove(item, 'up');
-      } else if (translationY > 20) {
-        onMove(item, 'down');
+      // Handle horizontal swipes
+      if (Math.abs(translationX) > Math.abs(translationY)) {
+        if (translationX > 50) {
+          // Swipe right - complete task
+          onToggle(item.key);
+        } else if (translationX < -50) {
+          // Swipe left - show edit/delete options
+          setShowSwipeActions(true);
+          setTimeout(() => setShowSwipeActions(false), 3000); // Hide after 3 seconds
+        }
+      } else {
+        // Handle vertical swipes (existing functionality)
+        if (translationY < -20) {
+          onMove(item, 'up');
+        } else if (translationY > 20) {
+          onMove(item, 'down');
+        }
       }
       
       Animated.parallel([
         Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+        }),
+        Animated.spring(translateX, {
           toValue: 0,
           useNativeDriver: true,
         }),
@@ -233,12 +261,36 @@ function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembe
           {
             transform: [
               { translateY },
+              { translateX },
               { scale }
             ],
             zIndex: 1,
           }
         ]}
       >
+        {/* Swipe Action Buttons */}
+        {showSwipeActions && (
+          <View style={styles.swipeActions}>
+            <TouchableOpacity 
+              style={[styles.swipeActionButton, styles.swipeEditButton]}
+              onPress={() => {
+                setShowSwipeActions(false);
+                onEdit(item);
+              }}
+            >
+              <Text style={styles.swipeActionText}>✏️ Edit</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.swipeActionButton, styles.swipeDeleteButton]}
+              onPress={() => {
+                setShowSwipeActions(false);
+                onRemove(item.key);
+              }}
+            >
+              <Text style={styles.swipeActionText}>🗑️ Delete</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <View style={[styles.flagCircle, { backgroundColor: item.priority.color }]} />
         <View style={styles.todoContent}>
           <View style={styles.todoTextContainer}>
@@ -1319,26 +1371,193 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [isConnected, setIsConnected] = useState(true); // Network status
+  const [offlineQueue, setOfflineQueue] = useState([]); // Actions to sync when online
+  const [expoPushToken, setExpoPushToken] = useState(null);
+
+  // Network status listener
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsConnected(!!state.isConnected);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Register for push notifications
+  useEffect(() => {
+    async function registerForPushNotificationsAsync() {
+      let token;
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#FF231F7C',
+        });
+      }
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== 'granted') {
+        Alert.alert('Push notifications permission not granted!');
+        return;
+      }
+      token = (await Notifications.getExpoPushTokenAsync()).data;
+      setExpoPushToken(token);
+    }
+    registerForPushNotificationsAsync();
+  }, []);
+
+  // Offline storage functions
+  const saveTodosToStorage = async (todos) => {
+    try {
+      await AsyncStorage.setItem('todos', JSON.stringify(todos));
+    } catch (error) {
+      console.error('Error saving todos to storage:', error);
+    }
+  };
+
+  const loadTodosFromStorage = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('todos');
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Error loading todos from storage:', error);
+      return [];
+    }
+  };
+
+  const saveOfflineQueue = async (queue) => {
+    try {
+      await AsyncStorage.setItem('offlineQueue', JSON.stringify(queue));
+    } catch (error) {
+      console.error('Error saving offline queue:', error);
+    }
+  };
+
+  const loadOfflineQueue = async () => {
+    try {
+      const stored = await AsyncStorage.getItem('offlineQueue');
+      return stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      console.error('Error loading offline queue:', error);
+      return [];
+    }
+  };
+
+  // Sync offline queue when network reconnects
+  useEffect(() => {
+    if (isConnected && offlineQueue.length > 0) {
+      syncOfflineQueue();
+    }
+  }, [isConnected]);
+
+  // Push notification function
+  const sendPushNotification = async (title, body, data = {}) => {
+    if (!expoPushToken) return;
+    
+    try {
+      const message = {
+        to: expoPushToken,
+        sound: 'default',
+        title: title,
+        body: body,
+        data: data,
+      };
+
+      await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Accept-encoding': 'gzip, deflate',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(message),
+      });
+    } catch (error) {
+      console.error('Error sending push notification:', error);
+    }
+  };
+
+  const syncOfflineQueue = async () => {
+    if (offlineQueue.length === 0) return;
+    
+    console.log('Syncing offline queue:', offlineQueue.length, 'actions');
+    
+    for (const action of offlineQueue) {
+      try {
+        switch (action.type) {
+          case 'add':
+            await supabase.from('todos').insert([action.data]);
+            break;
+          case 'update':
+            await supabase.from('todos').update(action.data).eq('id', action.id);
+            break;
+          case 'delete':
+            await supabase.from('todos').delete().eq('id', action.id);
+            break;
+          case 'toggle':
+            await supabase.from('todos').update({ completed: action.data.completed }).eq('id', action.id);
+            break;
+        }
+      } catch (error) {
+        console.error('Error syncing action:', action, error);
+      }
+    }
+    
+    // Clear queue and refresh data
+    setOfflineQueue([]);
+    saveOfflineQueue([]);
+    
+    // Refresh todos from server
+    const { data: todosData, error: todosError } = await supabase
+      .from('todos')
+      .select('*')
+      .order('manual_order', { ascending: true });
+    
+    if (!todosError) {
+      setTodos((todosData || []).map(normalizeTodo));
+      saveTodosToStorage(todosData || []);
+    }
+  };
 
   // Load todos and team members from Supabase on mount
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        // Load todos
-        const { data: todosData, error: todosError } = await supabase
-          .from('todos')
-          .select('*')
-          .order('manual_order', { ascending: true });
-        
-        if (todosError) {
-          console.error('Error loading todos from Supabase:', todosError);
-          setTodos([]);
-        } else {
-          setTodos((todosData || []).map(normalizeTodo));
-        }
+        // Load offline queue first
+        const storedQueue = await loadOfflineQueue();
+        setOfflineQueue(storedQueue);
 
-        // Load team members
+        // Load todos
+        let todosData = [];
+        if (isConnected) {
+          const { data, error: todosError } = await supabase
+            .from('todos')
+            .select('*')
+            .order('manual_order', { ascending: true });
+          
+          if (todosError) {
+            console.error('Error loading todos from Supabase:', todosError);
+            // Fall back to local storage
+            todosData = await loadTodosFromStorage();
+          } else {
+            todosData = data || [];
+            // Save to local storage
+            await saveTodosToStorage(todosData);
+          }
+        } else {
+          // Offline mode - load from local storage
+          todosData = await loadTodosFromStorage();
+        }
+        
+        setTodos(todosData.map(normalizeTodo));
+
+        // Load team members (always try online first)
         const { data: membersData, error: membersError } = await supabase
           .from('team_members')
           .select('*')
@@ -1374,38 +1593,74 @@ export default function App() {
       status: 'todo', // Default status
     };
     
-    const { error: insertError } = await supabase.from('todos').insert([newTodo]);
-    if (insertError) {
-      console.error('Error inserting todo:', insertError);
-      return;
+    // Update local state immediately
+    const normalizedTodo = normalizeTodo(newTodo);
+    const updatedTodos = [...todos, normalizedTodo];
+    setTodos(updatedTodos);
+    
+    // Save to local storage
+    const rawTodos = updatedTodos.map(todo => todoToSupabaseFormat(todo));
+    await saveTodosToStorage(rawTodos);
+    
+    if (isConnected) {
+      // Try to save to Supabase
+      const { error: insertError } = await supabase.from('todos').insert([newTodo]);
+      if (insertError) {
+        console.error('Error inserting todo:', insertError);
+        // Queue for later sync
+        const newQueue = [...offlineQueue, { type: 'add', data: newTodo }];
+        setOfflineQueue(newQueue);
+        await saveOfflineQueue(newQueue);
+      }
+    } else {
+      // Queue for later sync
+      const newQueue = [...offlineQueue, { type: 'add', data: newTodo }];
+      setOfflineQueue(newQueue);
+      await saveOfflineQueue(newQueue);
     }
-    
-    // Fetch updated todos from Supabase
-    const { data, error: fetchError } = await supabase
-      .from('todos')
-      .select('*')
-      .order('manual_order', { ascending: true });
-    
-    if (fetchError) {
-      console.error('Error fetching todos:', fetchError);
-      return;
+
+    // Send push notification if task is assigned to someone
+    if (assignee && assignee !== currentUser?.id) {
+      const assigneeMember = teamMembers.find(m => m.id === assignee);
+      if (assigneeMember) {
+        await sendPushNotification(
+          'New Task Assigned',
+          `You have been assigned: "${text.trim()}"`,
+          { type: 'task_assigned', taskId: newTodo.id }
+        );
+      }
     }
-    
-    setTodos((data || []).map(normalizeTodo));
   };
 
   const removeTodo = async (key) => {
-    const { error: deleteError } = await supabase
-      .from('todos')
-      .delete()
-      .eq('id', key);
+    // Update local state immediately
+    const updatedTodos = todos.filter(todo => todo.key !== key);
+    setTodos(updatedTodos);
     
-    if (deleteError) {
-      console.error('Error deleting todo from Supabase:', deleteError);
-      return;
+    // Save to local storage
+    const rawTodos = updatedTodos.map(todo => todoToSupabaseFormat(todo));
+    await saveTodosToStorage(rawTodos);
+    
+    if (isConnected) {
+      // Try to delete from Supabase
+      const { error: deleteError } = await supabase
+        .from('todos')
+        .delete()
+        .eq('id', key);
+      
+      if (deleteError) {
+        console.error('Error deleting todo from Supabase:', deleteError);
+        // Queue for later sync
+        const newQueue = [...offlineQueue, { type: 'delete', id: key }];
+        setOfflineQueue(newQueue);
+        await saveOfflineQueue(newQueue);
+      }
+    } else {
+      // Queue for later sync
+      const newQueue = [...offlineQueue, { type: 'delete', id: key }];
+      setOfflineQueue(newQueue);
+      await saveOfflineQueue(newQueue);
     }
-    
-    setTodos(todos.filter(todo => todo.key !== key));
   };
 
   const toggleComplete = async (key) => {
@@ -1413,19 +1668,48 @@ export default function App() {
     if (!todo) return;
     
     const updatedTodo = { ...todo, completed: !todo.completed };
-    const supabaseTodo = todoToSupabaseFormat(updatedTodo);
     
-    const { error: updateError } = await supabase
-      .from('todos')
-      .update({ completed: supabaseTodo.completed })
-      .eq('id', key);
+    // Update local state immediately
+    const updatedTodos = todos.map(todo => todo.key === key ? updatedTodo : todo);
+    setTodos(updatedTodos);
     
-    if (updateError) {
-      console.error('Error updating todo:', updateError);
-      return;
+    // Save to local storage
+    const rawTodos = updatedTodos.map(todo => todoToSupabaseFormat(todo));
+    await saveTodosToStorage(rawTodos);
+    
+    if (isConnected) {
+      // Try to update Supabase
+      const supabaseTodo = todoToSupabaseFormat(updatedTodo);
+      const { error: updateError } = await supabase
+        .from('todos')
+        .update({ completed: supabaseTodo.completed })
+        .eq('id', key);
+      
+      if (updateError) {
+        console.error('Error updating todo:', updateError);
+        // Queue for later sync
+        const newQueue = [...offlineQueue, { type: 'toggle', id: key, data: { completed: updatedTodo.completed } }];
+        setOfflineQueue(newQueue);
+        await saveOfflineQueue(newQueue);
+      }
+    } else {
+      // Queue for later sync
+      const newQueue = [...offlineQueue, { type: 'toggle', id: key, data: { completed: updatedTodo.completed } }];
+      setOfflineQueue(newQueue);
+      await saveOfflineQueue(newQueue);
     }
-    
-    setTodos(todos.map(todo => todo.key === key ? updatedTodo : todo));
+
+    // Send push notification when task is completed
+    if (updatedTodo.completed && item.assignee && item.assignee !== currentUser?.id) {
+      const assigneeMember = teamMembers.find(m => m.id === item.assignee);
+      if (assigneeMember) {
+        await sendPushNotification(
+          'Task Completed',
+          `"${item.text}" has been completed`,
+          { type: 'task_completed', taskId: key }
+        );
+      }
+    }
   };
 
   const updateTodo = async (key, updatedData) => {
@@ -1433,25 +1717,55 @@ export default function App() {
     if (!todo) return;
     
     const updatedTodo = { ...todo, ...updatedData };
-    const supabaseTodo = todoToSupabaseFormat(updatedTodo);
     
-    const { error: updateError } = await supabase
-      .from('todos')
-      .update({
-        text: supabaseTodo.text,
-        due_date: supabaseTodo.due_date,
-        priority: supabaseTodo.priority,
-        assignee: supabaseTodo.assignee,
-        status: supabaseTodo.status, // Add status to update
-      })
-      .eq('id', key);
+    // Update local state immediately
+    const updatedTodos = todos.map(todo => todo.key === key ? updatedTodo : todo);
+    setTodos(updatedTodos);
     
-    if (updateError) {
-      console.error('Error updating todo:', updateError);
-      return;
+    // Save to local storage
+    const rawTodos = updatedTodos.map(todo => todoToSupabaseFormat(todo));
+    await saveTodosToStorage(rawTodos);
+    
+    if (isConnected) {
+      // Try to update Supabase
+      const supabaseTodo = todoToSupabaseFormat(updatedTodo);
+      const { error: updateError } = await supabase
+        .from('todos')
+        .update({
+          text: supabaseTodo.text,
+          due_date: supabaseTodo.due_date,
+          priority: supabaseTodo.priority,
+          assignee: supabaseTodo.assignee,
+          status: supabaseTodo.status,
+        })
+        .eq('id', key);
+      
+      if (updateError) {
+        console.error('Error updating todo:', updateError);
+        // Queue for later sync
+        const newQueue = [...offlineQueue, { type: 'update', id: key, data: supabaseTodo }];
+        setOfflineQueue(newQueue);
+        await saveOfflineQueue(newQueue);
+      }
+    } else {
+      // Queue for later sync
+      const supabaseTodo = todoToSupabaseFormat(updatedTodo);
+      const newQueue = [...offlineQueue, { type: 'update', id: key, data: supabaseTodo }];
+      setOfflineQueue(newQueue);
+      await saveOfflineQueue(newQueue);
     }
-    
-    setTodos(todos.map(todo => todo.key === key ? updatedTodo : todo));
+
+    // Send push notification if task is reassigned
+    if (updatedData.assignee && updatedData.assignee !== todo.assignee && updatedData.assignee !== currentUser?.id) {
+      const assigneeMember = teamMembers.find(m => m.id === updatedData.assignee);
+      if (assigneeMember) {
+        await sendPushNotification(
+          'Task Reassigned',
+          `"${todo.text}" has been assigned to you`,
+          { type: 'task_reassigned', taskId: key }
+        );
+      }
+    }
   };
 
   // Team member operations
@@ -1485,20 +1799,7 @@ export default function App() {
     setTeamMembers(teamMembers.filter(member => member.id !== id));
   };
 
-  // Save todos to Supabase when they change (except on initial load)
-  useEffect(() => {
-    if (!loading && initialLoadComplete && todos.length > 0) {
-      (async () => {
-        for (const todo of todos) {
-          const supabaseTodo = todoToSupabaseFormat(todo);
-          const { error: upsertError } = await supabase.from('todos').upsert(supabaseTodo);
-          if (upsertError) {
-            console.error('Error saving todo to Supabase:', upsertError);
-          }
-        }
-      })();
-    }
-  }, [todos, loading, initialLoadComplete]);
+
 
   // User Selection Screen
   if (!currentUser) {
@@ -1536,6 +1837,15 @@ export default function App() {
   return (
     <ErrorBoundary>
       <NavigationContainer>
+        {/* Network Status Indicator */}
+        {!isConnected && (
+          <View style={styles.networkStatus}>
+            <Text style={styles.networkStatusText}>
+              📱 Offline Mode - {offlineQueue.length} pending actions
+            </Text>
+          </View>
+        )}
+        
         <Tab.Navigator
           screenOptions={{
             tabBarPosition: 'top',
@@ -1559,6 +1869,12 @@ export default function App() {
             headerShown: false,
           }}
         >
+          <Tab.Screen 
+            name="Dashboard" 
+            options={{ tabBarLabel: '📊 Dashboard' }}
+          >
+            {() => <DashboardScreen todos={todos} teamMembers={teamMembers} />}
+          </Tab.Screen>
           <Tab.Screen 
             name="Calendar" 
             options={{ tabBarLabel: '📅 Calendar' }}
@@ -2335,6 +2651,145 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  // Network status styles
+  networkStatus: {
+    backgroundColor: '#ff6b6b',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  networkStatusText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  // Swipe action styles
+  swipeActions: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  swipeActionButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 4,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 80,
+  },
+  swipeEditButton: {
+    backgroundColor: '#007bff',
+  },
+  swipeDeleteButton: {
+    backgroundColor: '#dc3545',
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  // Dashboard styles
+  dashboardCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 16,
+    marginHorizontal: 4,
+    flex: 1,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dashboardCardTitle: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  dashboardCardValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#007bff',
+  },
+  dashboardSection: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dashboardSectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    color: '#333',
+  },
+  userProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 8,
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  userAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  userInitials: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  userName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  progressBar: {
+    flex: 1,
+    height: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 4,
+    marginHorizontal: 12,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#007bff',
+    minWidth: 30,
+    textAlign: 'right',
+  },
+  avgTimeText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#28a745',
+    marginLeft: 12,
+  },
 });
 
 // Error Boundary Component
@@ -2443,6 +2898,119 @@ function TaskComments({ taskId, currentUser }) {
         >
           <Text style={{ color: '#fff', fontWeight: 'bold' }}>Post</Text>
         </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function DashboardScreen({ todos, teamMembers }) {
+  // Calculate metrics
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay()); // Sunday
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  // Tasks completed this week by user
+  const completedThisWeek = todos.filter(todo => {
+    if (!todo.completed) return false;
+    const completedAt = todo.completed_at ? new Date(todo.completed_at) : null;
+    return completedAt && completedAt >= startOfWeek;
+  });
+  const completedByUser = {};
+  completedThisWeek.forEach(todo => {
+    const user = todo.assignee || 'Unassigned';
+    completedByUser[user] = (completedByUser[user] || 0) + 1;
+  });
+
+  // Unassigned tasks
+  const unassignedCount = todos.filter(todo => !todo.assignee).length;
+
+  // Average time-to-complete per user (in days)
+  const timeToCompleteByUser = {};
+  const countByUser = {};
+  todos.forEach(todo => {
+    if (todo.completed && todo.completed_at && todo.created_at) {
+      const created = new Date(todo.created_at);
+      const completed = new Date(todo.completed_at);
+      const days = (completed - created) / (1000 * 60 * 60 * 24);
+      const user = todo.assignee || 'Unassigned';
+      timeToCompleteByUser[user] = (timeToCompleteByUser[user] || 0) + days;
+      countByUser[user] = (countByUser[user] || 0) + 1;
+    }
+  });
+
+  return (
+    <View style={{ flex: 1, padding: 16, backgroundColor: '#fff' }}>
+      <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 20, textAlign: 'center' }}>
+        📊 Team Dashboard
+      </Text>
+      
+      {/* Summary Cards */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 }}>
+        <View style={styles.dashboardCard}>
+          <Text style={styles.dashboardCardTitle}>Completed This Week</Text>
+          <Text style={styles.dashboardCardValue}>{completedThisWeek.length}</Text>
+        </View>
+        <View style={styles.dashboardCard}>
+          <Text style={styles.dashboardCardTitle}>Unassigned Tasks</Text>
+          <Text style={[styles.dashboardCardValue, { color: '#dc3545' }]}>{unassignedCount}</Text>
+        </View>
+        <View style={styles.dashboardCard}>
+          <Text style={styles.dashboardCardTitle}>Total Tasks</Text>
+          <Text style={styles.dashboardCardValue}>{todos.length}</Text>
+        </View>
+      </View>
+
+      {/* Tasks Completed by User */}
+      <View style={styles.dashboardSection}>
+        <Text style={styles.dashboardSectionTitle}>Tasks Completed This Week by User</Text>
+        {teamMembers.map(member => (
+          <View key={member.id} style={styles.userProgressRow}>
+            <View style={styles.userInfo}>
+              <View style={[styles.userAvatar, { backgroundColor: TEAM_COLORS[teamMembers.indexOf(member) % TEAM_COLORS.length] }]}>
+                <Text style={styles.userInitials}>
+                  {member.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.userName}>{member.name}</Text>
+            </View>
+            <View style={styles.progressBar}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { 
+                    width: `${Math.min((completedByUser[member.id] || 0) * 20, 100)}%`,
+                    backgroundColor: TEAM_COLORS[teamMembers.indexOf(member) % TEAM_COLORS.length]
+                  }
+                ]} 
+              />
+            </View>
+            <Text style={styles.progressText}>{completedByUser[member.id] || 0}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Average Time to Complete */}
+      <View style={styles.dashboardSection}>
+        <Text style={styles.dashboardSectionTitle}>Average Time to Complete (Days)</Text>
+        {teamMembers.map(member => {
+          const avgDays = countByUser[member.id] ? (timeToCompleteByUser[member.id] / countByUser[member.id]) : 0;
+          return (
+            <View key={member.id} style={styles.userProgressRow}>
+              <View style={styles.userInfo}>
+                <View style={[styles.userAvatar, { backgroundColor: TEAM_COLORS[teamMembers.indexOf(member) % TEAM_COLORS.length] }]}>
+                  <Text style={styles.userInitials}>
+                    {member.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={styles.userName}>{member.name}</Text>
+              </View>
+              <Text style={styles.avgTimeText}>
+                {avgDays > 0 ? avgDays.toFixed(1) : 'N/A'}
+              </Text>
+            </View>
+          );
+        })}
       </View>
     </View>
   );
