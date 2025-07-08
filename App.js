@@ -31,6 +31,13 @@ const CALENDAR_MODES = [
   { label: 'Day', value: 'day' },
 ];
 
+// 1. Add STATUS_OPTIONS
+const STATUS_OPTIONS = [
+  { label: 'To Do', value: 'todo' },
+  { label: 'In Progress', value: 'inprogress' },
+  { label: 'Complete', value: 'complete' },
+];
+
 // Utility functions
 function formatShortDate(date) {
   const d = new Date(date);
@@ -66,18 +73,27 @@ function getStatusAndColor(todo) {
 
 // Data conversion functions
 const normalizeTodo = (todo) => {
+  let dueDate;
+  if (todo.due_date instanceof Date) {
+    dueDate = todo.due_date;
+  } else if (typeof todo.due_date === 'string' && !isNaN(Date.parse(todo.due_date))) {
+    dueDate = new Date(todo.due_date);
+  } else {
+    dueDate = new Date();
+  }
   return {
     key: todo.id,
     text: todo.text,
     completed: todo.completed,
-    dueDate: todo.due_date ? new Date(todo.due_date) : new Date(),
+    dueDate,
     priority: {
       label: todo.priority || 'Medium',
       color: PRIORITY_OPTIONS.find(opt => opt.label === todo.priority)?.color || '#faad14',
       flag: PRIORITY_OPTIONS.find(opt => opt.label === todo.priority)?.flag || '🏳️'
     },
     assignee: todo.assignee || null,
-    manualOrder: todo.manual_order || 0
+    manualOrder: todo.manual_order || 0,
+    status: todo.status || 'todo',
   };
 };
 
@@ -89,7 +105,8 @@ const todoToSupabaseFormat = (todo) => {
     due_date: todo.dueDate ? new Date(todo.dueDate).toISOString().split('T')[0] : null,
     priority: typeof todo.priority === 'string' ? todo.priority : (todo.priority && todo.priority.label ? todo.priority.label : 'Medium'),
     assignee: todo.assignee,
-    manual_order: todo.manualOrder || 0
+    manual_order: todo.manualOrder || 0,
+    status: todo.status || 'todo',
   };
 };
 
@@ -109,13 +126,15 @@ function CalendarScreen({ todos, teamMembers }) {
   const todoEvents = todos.map(todo => {
     const date = new Date(todo.dueDate);
     const assignee = todo.assignee ? teamMembers.find(m => m.id === todo.assignee) : null;
+    const assigneeIndex = assignee ? teamMembers.findIndex(m => m.id === todo.assignee) : -1;
+    const eventColor = assigneeIndex >= 0 ? TEAM_COLORS[assigneeIndex % TEAM_COLORS.length] : '#ccc';
     const assigneeInitials = assignee ? assignee.name.split(' ').map(n => n[0]).join('').toUpperCase() : '';
     
     return {
       title: `${todo.text} ${todo.priority.flag}${assigneeInitials ? ` 👤${assigneeInitials}` : ''}`,
       start: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0),
       end: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 10, 0),
-      color: todo.priority.color,
+      color: eventColor,
     };
   });
   
@@ -160,7 +179,7 @@ function CalendarScreen({ todos, teamMembers }) {
 }
 
 // Draggable Todo Item Component
-function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembers }) {
+function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembers, onStatusChange }) {
   const translateY = new Animated.Value(0);
   const scale = new Animated.Value(1);
 
@@ -224,6 +243,19 @@ function DraggableTodoItem({ item, onToggle, onRemove, onMove, onEdit, teamMembe
           <Text style={styles.todoDate}>{formatShortDate(item.dueDate)}</Text>
         </View>
         
+        {/* Status Dropdown/Buttons */}
+        <View style={styles.statusContainer}>
+          {STATUS_OPTIONS.map(opt => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.statusButton, item.status === opt.value && styles.statusButtonActive]}
+              onPress={() => onStatusChange(item, opt.value)}
+            >
+              <Text style={item.status === opt.value ? styles.statusButtonTextActive : styles.statusButtonText}>{opt.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <View style={styles.todoActions}>
           <TouchableOpacity onPress={() => onEdit(item)} style={styles.actionButton}>
             <Text style={styles.editButton}>✏️</Text>
@@ -501,6 +533,10 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
     }
   };
 
+  const handleStatusChange = async (todo, newStatus) => {
+    await onUpdateTodo(todo.key, { status: newStatus });
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.inputContainer}>
@@ -763,6 +799,7 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
               onMove={moveTodo}
               onEdit={handleEditTodo}
               teamMembers={teamMembers}
+              onStatusChange={handleStatusChange}
             />
           );
         }}
@@ -980,6 +1017,10 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
     tasks.forEach(task => flatData.push({ ...task, type: 'task' }));
   });
 
+  const handleStatusChange = async (todo, newStatus) => {
+    await onUpdateTodo(todo.key, { status: newStatus });
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Performance Tracking</Text>
@@ -1102,6 +1143,7 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
               onMove={moveTodo}
               onEdit={handleEditTodo}
               teamMembers={teamMembers}
+              onStatusChange={handleStatusChange}
             />
           );
         }}
@@ -1170,6 +1212,7 @@ export default function App() {
       priority: typeof priority === 'string' ? priority : (priority && priority.label ? priority.label : 'Medium'),
       assignee: assignee,
       manual_order: todos.length,
+      status: 'todo', // Default status
     };
     
     const { error: insertError } = await supabase.from('todos').insert([newTodo]);
@@ -1239,7 +1282,8 @@ export default function App() {
         text: supabaseTodo.text,
         due_date: supabaseTodo.due_date,
         priority: supabaseTodo.priority,
-        assignee: supabaseTodo.assignee
+        assignee: supabaseTodo.assignee,
+        status: supabaseTodo.status, // Add status to update
       })
       .eq('id', key);
     
@@ -2118,5 +2162,32 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  // Status Dropdown/Buttons
+  statusContainer: {
+    flexDirection: 'row',
+    marginLeft: 10,
+    marginRight: 10,
+    gap: 10,
+  },
+  statusButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+  },
+  statusButtonActive: {
+    backgroundColor: '#007bff',
+    borderColor: '#007bff',
+  },
+  statusButtonText: {
+    color: '#333',
+    fontSize: 14,
+  },
+  statusButtonTextActive: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });

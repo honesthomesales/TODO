@@ -15,7 +15,9 @@ A cross-platform todo application built with React Native and Expo, featuring te
 
 ## 🚀 Live Demo
 
-Visit the live web version: [https://honesthomesales.github.io/TODO/](https://honesthomesales.github.io/TODO/)
+Visit the live web version: [Deploy to Vercel for live demo](https://vercel.com)
+
+**Note**: This app is optimized for Vercel deployment. For the best experience, deploy using the Vercel platform.
 
 ## 🛠️ Tech Stack
 
@@ -75,13 +77,19 @@ Visit the live web version: [https://honesthomesales.github.io/TODO/](https://ho
 
 ## 🌐 Web Deployment
 
-This app is automatically deployed to GitHub Pages using GitHub Actions. The deployment workflow:
+This app is optimized for **Vercel deployment** which provides the best experience for Expo web apps.
 
-1. Builds the app for web using `expo export --platform web`
-2. Deploys the `dist` folder to GitHub Pages
-3. Triggers on every push to main/master branch
+### Recommended: Deploy to Vercel
 
-### Manual Deployment
+1. Go to [vercel.com](https://vercel.com)
+2. Sign up/Login with your GitHub account
+3. Click "New Project" and import this repository
+4. Vercel will automatically detect the Expo configuration
+5. Click "Deploy"
+
+See `VERCEL_DEPLOYMENT.md` for detailed instructions.
+
+### Manual Build
 
 ```bash
 # Build for web

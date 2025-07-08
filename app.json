@@ -20,12 +20,17 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.honesthomesales.todolistapp"
     },
     "web": {
       "favicon": "./assets/favicon.png",
-      "publicPath": "/TODO/",
       "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7af6a027-5c70-4dea-83f9-37a285823ee0"
+      }
     }
   }
 }
