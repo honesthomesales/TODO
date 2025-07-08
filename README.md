@@ -15,7 +15,7 @@ A cross-platform todo application built with React Native and Expo, featuring te
 
 ## 🚀 Live Demo
 
-Visit the live web version: [Your GitHub Pages URL will appear here after deployment]
+Visit the live web version: [https://honesthomesales.github.io/TODO/](https://honesthomesales.github.io/TODO/)
 
 ## 🛠️ Tech Stack
 
