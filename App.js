@@ -627,28 +627,11 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
               </View>
             </View>
             {showDatePicker && (
-              Platform.OS === 'web' ? (
-                <input
-                  type="date"
-                  value={dueDate ? dueDate.toISOString().substr(0, 10) : ''}
-                  onChange={e => {
-                    setShowDatePicker(false);
-                    if (e.target.value) setDueDate(new Date(e.target.value));
-                  }}
-                  style={{ fontSize: 18, padding: 8, margin: 8 }}
-                  autoFocus
-                />
-              ) : (
-                <DateTimePicker
-                  value={isValidDate(dueDate) ? dueDate : new Date()}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(_, date) => {
-                    setShowDatePicker(false);
-                    if (date) setDueDate(date);
-                  }}
-                />
-              )
+              <CrossPlatformDatePicker
+                value={dueDate}
+                onChange={date => setDueDate(date)}
+                onClose={() => setShowDatePicker(false)}
+              />
             )}
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
@@ -731,28 +714,11 @@ function TodoListScreen({ todos, setTodos, onAddTodo, onRemoveTodo, onToggleComp
               </View>
             </View>
             {showDatePicker && (
-              Platform.OS === 'web' ? (
-                <input
-                  type="date"
-                  value={dueDate ? dueDate.toISOString().substr(0, 10) : ''}
-                  onChange={e => {
-                    setShowDatePicker(false);
-                    if (e.target.value) setDueDate(new Date(e.target.value));
-                  }}
-                  style={{ fontSize: 18, padding: 8, margin: 8 }}
-                  autoFocus
-                />
-              ) : (
-                <DateTimePicker
-                  value={isValidDate(dueDate) ? dueDate : new Date()}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(_, date) => {
-                    setShowDatePicker(false);
-                    if (date) setDueDate(date);
-                  }}
-                />
-              )
+              <CrossPlatformDatePicker
+                value={dueDate}
+                onChange={date => setDueDate(date)}
+                onClose={() => setShowDatePicker(false)}
+              />
             )}
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
@@ -1125,28 +1091,11 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
               </View>
             </View>
             {showDatePicker && (
-              Platform.OS === 'web' ? (
-                <input
-                  type="date"
-                  value={dueDate ? dueDate.toISOString().substr(0, 10) : ''}
-                  onChange={e => {
-                    setShowDatePicker(false);
-                    if (e.target.value) setDueDate(new Date(e.target.value));
-                  }}
-                  style={{ fontSize: 18, padding: 8, margin: 8 }}
-                  autoFocus
-                />
-              ) : (
-                <DateTimePicker
-                  value={isValidDate(dueDate) ? dueDate : new Date()}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={(_, date) => {
-                    setShowDatePicker(false);
-                    if (date) setDueDate(date);
-                  }}
-                />
-              )
+              <CrossPlatformDatePicker
+                value={dueDate}
+                onChange={date => setDueDate(date)}
+                onClose={() => setShowDatePicker(false)}
+              />
             )}
             <View style={{ flexDirection: 'row', marginTop: 20, justifyContent: 'flex-end' }}>
               <TouchableOpacity onPress={() => setShowEditModal(false)} style={[styles.addButton, { backgroundColor: '#aaa', marginRight: 10 }]}> 
@@ -1195,6 +1144,36 @@ function PrioritizedScreen({ todos, setTodos, onToggleComplete, onRemoveTodo, on
       />
     </View>
   );
+}
+
+// Cross-platform date picker component
+function CrossPlatformDatePicker({ value, onChange, onClose }) {
+  if (Platform.OS === 'web') {
+    return (
+      <input
+        type="date"
+        value={value ? value.toISOString().substr(0, 10) : ''}
+        onChange={e => {
+          onClose && onClose();
+          if (e.target.value) onChange(new Date(e.target.value));
+        }}
+        style={{ fontSize: 18, padding: 8, margin: 8 }}
+        autoFocus
+      />
+    );
+  } else {
+    return (
+      <DateTimePicker
+        value={isValidDate(value) ? value : new Date()}
+        mode="date"
+        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        onChange={(_, date) => {
+          onClose && onClose();
+          if (date) onChange(date);
+        }}
+      />
+    );
+  }
 }
 
 // Main App Component
