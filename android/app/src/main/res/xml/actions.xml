@@ -1,0 +1,13 @@
+<actions>
+  <action intentName="actions.intent.OPEN_APP_FEATURE">
+    <fulfillment urlTemplate="todo://open"/>
+    <parameter-mapping intentParameter="feature" urlParameter="feature"/>
+  </action>
+  <action intentName="actions.intent.CREATE_TASK">
+    <fulfillment urlTemplate="todo://add_task?task={task}&amp;priority={priority}&amp;date={date}&amp;assignee={assignee}"/>
+    <parameter-mapping intentParameter="task.name" urlParameter="task"/>
+    <parameter-mapping intentParameter="task.priority" urlParameter="priority"/>
+    <parameter-mapping intentParameter="task.dueDate" urlParameter="date"/>
+    <parameter-mapping intentParameter="task.assignee" urlParameter="assignee"/>
+  </action>
+</actions> 
